@@ -21,8 +21,7 @@ utils/supabase/info.tsx
 .idea/
 .vscode/
 
-# EAS / Expo
-eas.json
+# EAS / Expo (keep mobile/eas.json template)
 *.jks
 *.p8
 *.p12
