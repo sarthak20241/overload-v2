@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
 import { spacing, radius, routineColors } from '../theme/tokens';
 import { useAuth } from '../context/AuthContext';
@@ -19,7 +19,7 @@ export default function RoutinesScreen() {
   const { user } = useAuth();
   const [routines, setRoutines] = useState<RoutineRow[]>([]);
 
-  useEffect(() => {
+  const loadRoutines = useCallback(() => {
     if (!user?.id) return;
     supabase
       .from('routines')
@@ -29,11 +29,17 @@ export default function RoutinesScreen() {
       .then(({ data }) => setRoutines(data ?? []));
   }, [user?.id]);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadRoutines();
+    }, [loadRoutines])
+  );
+
   const renderItem = ({ item, index }: { item: RoutineRow; index: number }) => {
     const color = routineColors[index % routineColors.length];
     return (
       <TouchableOpacity
-        onPress={() => {}}
+        onPress={() => openEditor(item.id)}
         style={[
           styles.card,
           { backgroundColor: colors.card, borderColor: colors.borderSubtle },
@@ -52,10 +58,20 @@ export default function RoutinesScreen() {
     );
   };
 
+  const openEditor = (id?: string) => {
+    navigation.navigate('RoutineEditor', { routineId: id });
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.pageTop }]}>
         <Text style={[styles.title, { color: colors.foreground }]}>Routines</Text>
+        <TouchableOpacity
+          onPress={() => openEditor()}
+          style={[styles.createBtn, { backgroundColor: colors.ctaBg }]}
+        >
+          <Text style={[styles.createBtnText, { color: colors.ctaFg }]}>Create routine</Text>
+        </TouchableOpacity>
       </View>
       <FlatList
         data={routines}
@@ -77,8 +93,20 @@ export default function RoutinesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: spacing.pageX, paddingBottom: spacing[4] },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.pageX,
+    paddingBottom: spacing[4],
+  },
   title: { fontSize: 24, fontWeight: '700' },
+  createBtn: {
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: 8,
+  },
+  createBtnText: { fontSize: 14, fontWeight: '600' },
   list: { paddingHorizontal: spacing.pageX, paddingTop: spacing[2] },
   card: {
     flexDirection: 'row',

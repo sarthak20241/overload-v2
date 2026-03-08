@@ -6,12 +6,14 @@ import AuthScreen from '../screens/AuthScreen';
 import MainTabs from './MainTabs';
 import WorkoutScreen from '../screens/WorkoutScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import RoutineEditorScreen from '../screens/RoutineEditorScreen';
 
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
   Workout: { routineId: string };
   Profile: undefined;
+  RoutineEditor: { routineId?: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -33,6 +35,7 @@ export default function RootNavigator() {
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="Workout" component={WorkoutScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="RoutineEditor" component={RoutineEditorScreen} />
           </>
         )}
       </Stack.Navigator>

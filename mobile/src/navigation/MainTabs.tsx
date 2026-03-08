@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, Platform, ActivityIndicator, Alert } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Play } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
-import { useWorkout } from '../context/WorkoutContext';
+import { useWorkout, type ActiveExercise } from '../context/WorkoutContext';
 import { spacing, radius } from '../theme/tokens';
+import { useAuth } from '../context/AuthContext';
+import { useWorkoutSelector, WorkoutSelectorProvider } from '../context/WorkoutSelectorContext';
+import { supabase } from '../lib/supabase';
 import DashboardScreen from '../screens/DashboardScreen';
 import RoutinesScreen from '../screens/RoutinesScreen';
 import HistoryScreen from '../screens/HistoryScreen';
@@ -22,42 +26,25 @@ function fmt(seconds: number) {
 
 function PlayButton() {
   const { colors } = useTheme();
-  const navigation = useNavigation<any>();
-  const workout = useWorkout();
-  const [modalVisible, setModalVisible] = useState(false);
-
-  const handleSelect = (id: string) => {
-    setModalVisible(false);
-    const name = id === 'new' ? 'Blank Workout' : 'Workout';
-    workout.startWorkout(id, name);
-    navigation.getParent()?.navigate('Workout', { routineId: id });
-  };
-
+  const { openWorkoutSelector } = useWorkoutSelector();
   return (
-    <>
-      <TouchableOpacity
-        onPress={() => setModalVisible(true)}
-        activeOpacity={0.9}
-        style={[
-          styles.playButton,
-          {
-            backgroundColor: colors.ctaBg,
-            shadowColor: colors.primary,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 16,
-            elevation: 8,
-          },
-        ]}
-      >
-        <Text style={[styles.playIcon, { color: colors.ctaFg }]}>▶</Text>
-      </TouchableOpacity>
-      <WorkoutSelectorModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onSelectRoutine={handleSelect}
-      />
-    </>
+    <TouchableOpacity
+      onPress={openWorkoutSelector}
+      activeOpacity={0.9}
+      style={[
+        styles.playButton,
+        {
+          backgroundColor: colors.ctaBg,
+          shadowColor: colors.primary,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 16,
+          elevation: 8,
+        },
+      ]}
+    >
+      <Play size={26} color={colors.ctaFg} strokeWidth={2.5} fill={colors.ctaFg} />
+    </TouchableOpacity>
   );
 }
 
@@ -84,7 +71,7 @@ function FloatingWorkoutBar() {
           {workout.routineName}
         </Text>
         <Text style={[styles.floatingBarSub, { color: colors.textMuted }]}>
-          {fmt(workout.elapsed)} · {workout.completedSets} sets
+          {fmt(workout.elapsed)} · {workout.exercises.flatMap((e) => e.sets).length} sets
         </Text>
       </View>
       <View style={[styles.returnBtn, { backgroundColor: colors.ctaBg }]}>
@@ -96,43 +83,140 @@ function FloatingWorkoutBar() {
 }
 
 export default function MainTabs() {
-  const { colors } = useTheme();
+  const [modalVisible, setModalVisible] = useState(false);
+  return (
+    <WorkoutSelectorProvider openWorkoutSelector={() => setModalVisible(true)}>
+      <MainTabsWithModal modalVisible={modalVisible} setModalVisible={setModalVisible} />
+    </WorkoutSelectorProvider>
+  );
+}
 
+function MainTabsWithModal({
+  modalVisible,
+  setModalVisible,
+}: {
+  modalVisible: boolean;
+  setModalVisible: (v: boolean) => void;
+}) {
+  const navigation = useNavigation<any>();
+  const workout = useWorkout();
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
+
+  const handleSelect = async (id: string) => {
+    setModalVisible(false);
+    if (id === 'new') {
+      workout.beginWorkout('new', 'New Workout', [], {});
+      navigation.getParent()?.navigate('Workout', { routineId: id });
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data: routine, error: rErr } = await supabase
+        .from('routines')
+        .select('id, name')
+        .eq('id', id)
+        .eq('user_id', user!.id)
+        .single();
+      if (rErr || !routine) {
+        Alert.alert('Error', 'Routine not found');
+        setLoading(false);
+        return;
+      }
+      const { data: exRows } = await supabase
+        .from('routine_exercises')
+        .select('*')
+        .eq('routine_id', id)
+        .order('sort_order', { ascending: true });
+      const exercises: ActiveExercise[] = (exRows ?? []).map((ex: any) => ({
+        exerciseId: ex.id,
+        name: ex.name,
+        muscleGroup: ex.muscle_group ?? undefined,
+        targetSets: ex.target_sets,
+        targetReps: ex.target_reps,
+        restSeconds: ex.rest_seconds,
+        sets: [],
+        notes: ex.notes ?? '',
+        started: false,
+        finished: false,
+      }));
+      let prevPerf: Record<string, { weight: number; reps: number }[]> = {};
+      const { data: lastSession } = await supabase
+        .from('workout_sessions')
+        .select('id')
+        .eq('user_id', user!.id)
+        .eq('routine_id', id)
+        .order('start_time', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastSession?.id) {
+        const { data: sessExs } = await supabase
+          .from('session_exercises')
+          .select('id, name')
+          .eq('session_id', (lastSession as { id: string }).id);
+        const { data: sets } = await supabase
+          .from('session_sets')
+          .select('session_exercise_id, weight, reps')
+          .in('session_exercise_id', (sessExs ?? []).map((e: any) => e.id));
+        const exIdsToName: Record<string, string> = {};
+        (sessExs ?? []).forEach((e: any) => { exIdsToName[e.id] = e.name; });
+        (sets ?? []).forEach((s: any) => {
+          const name = exIdsToName[s.session_exercise_id];
+          if (!name) return;
+          if (!prevPerf[name]) prevPerf[name] = [];
+          prevPerf[name].push({ weight: s.weight, reps: s.reps });
+        });
+      }
+      workout.beginWorkout(id, (routine as { name: string }).name, exercises, prevPerf);
+      navigation.getParent()?.navigate('Workout', { routineId: id });
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Failed to load routine');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const { colors } = useTheme();
   return (
     <View style={{ flex: 1 }}>
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          height: spacing.navHeight,
-          backgroundColor: colors.navBg,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-        },
-        tabBarActiveTintColor: colors.accentText,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '500' },
-        tabBarShowLabel: true,
-      }}
-    >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Dashboard' }} />
-      <Tab.Screen name="Routines" component={RoutinesScreen} options={{ title: 'Routines' }} />
-      <Tab.Screen
-        name="Play"
-        component={View}
-        options={{
-          title: '',
-          tabBarButton: () => (
-            <View style={styles.playButtonContainer}>
-              <PlayButton />
-            </View>
-          ),
+      <Tab.Navigator
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: {
+            height: spacing.navHeight,
+            backgroundColor: colors.navBg,
+            borderTopColor: colors.border,
+            borderTopWidth: 1,
+          },
+          tabBarActiveTintColor: colors.accentText,
+          tabBarInactiveTintColor: colors.textMuted,
+          tabBarLabelStyle: { fontSize: 10, fontWeight: '500' },
+          tabBarShowLabel: true,
         }}
+      >
+        <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Dashboard' }} />
+        <Tab.Screen name="Routines" component={RoutinesScreen} options={{ title: 'Routines' }} />
+        <Tab.Screen
+          name="Play"
+          component={View}
+          options={{
+            title: '',
+            tabBarButton: () => (
+              <View style={styles.playButtonContainer}>
+                <PlayButton />
+              </View>
+            ),
+          }}
+        />
+        <Tab.Screen name="History" component={HistoryScreen} options={{ title: 'History' }} />
+        <Tab.Screen name="Analytics" component={AnalyticsScreen} options={{ title: 'Analytics' }} />
+      </Tab.Navigator>
+      <FloatingWorkoutBar />
+      <WorkoutSelectorModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onSelectRoutine={handleSelect}
       />
-      <Tab.Screen name="History" component={HistoryScreen} options={{ title: 'History' }} />
-      <Tab.Screen name="Analytics" component={AnalyticsScreen} options={{ title: 'Analytics' }} />
-    </Tab.Navigator>
-    <FloatingWorkoutBar />
     </View>
   );
 }
