@@ -16,9 +16,10 @@ import {
   Clock,
   ChevronRight,
 } from 'lucide-react-native';
-import Svg, { Path, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Path, Circle, Defs, LinearGradient, Stop, Rect, ClipPath, G } from 'react-native-svg';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
@@ -95,13 +96,20 @@ export default function DashboardScreen() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const chartLineProgress = useRef(new Animated.Value(0)).current;
   const chartOpacity = useRef(new Animated.Value(0)).current;
+  const chartAreaProgress = useRef(new Animated.Value(0)).current;
   const donutScale = useRef(new Animated.Value(0.85)).current;
   const donutOpacity = useRef(new Animated.Value(0)).current;
   const xpBarProgress = useRef(new Animated.Value(0)).current;
+  const [activeSegment, setActiveSegment] = useState<{
+    name: string;
+    value: number;
+    color: string;
+  } | null>(null);
   useEffect(() => {
     Animated.parallel([
       Animated.timing(chartOpacity, { toValue: 1, duration: 450, useNativeDriver: true }),
       Animated.timing(chartLineProgress, { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(chartAreaProgress, { toValue: 1, duration: 650, useNativeDriver: true }),
       Animated.timing(donutOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
       Animated.spring(donutScale, { toValue: 1, useNativeDriver: true, friction: 9, tension: 50 }),
     ]).start();
@@ -186,6 +194,23 @@ export default function DashboardScreen() {
     [sessions]
   );
 
+  const donutSegmentBounds = useMemo(() => {
+    const slice = muscleSplit.slice(0, 6);
+    const total = slice.reduce((s, d) => s + d.value, 0) || 1;
+    const paddingDeg = 2;
+    const paddingRad = (paddingDeg / 360) * 2 * Math.PI;
+    const out: { seg: (typeof muscleSplit)[0]; start: number; end: number }[] = [];
+    let acc = 0;
+    slice.forEach((seg) => {
+      const pct = seg.value / total;
+      const angle = ((pct * 360 - paddingDeg) / 360) * 2 * Math.PI;
+      const start = acc;
+      acc += angle + paddingRad;
+      out.push({ seg, start, end: start + angle });
+    });
+    return out;
+  }, [muscleSplit]);
+
   const avgDuration =
     thisWeekSessions.length > 0
       ? Math.round(
@@ -219,7 +244,7 @@ export default function DashboardScreen() {
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={{
-        paddingTop: insets.top + 48,
+        paddingTop: Math.max(insets.top, 48),
         paddingBottom: spacing.navContentReserve + spacing[6],
         paddingHorizontal: PAD,
       }}
@@ -239,16 +264,25 @@ export default function DashboardScreen() {
               style={[
                 styles.levelBadge,
                 {
-                  backgroundColor: xp.titleColor,
                   borderColor: 'transparent',
                   shadowColor: xp.titleColor,
                   shadowOffset: { width: 0, height: 0 },
                   shadowOpacity: 0.35,
                   shadowRadius: 10,
                   elevation: 4,
+                  overflow: 'hidden',
                 },
               ]}
             >
+              <Svg width={24} height={24} viewBox="0 0 24 24" style={StyleSheet.absoluteFill}>
+                <Defs>
+                  <LinearGradient id="levelGrad" x1="0" y1="0" x2="1" y2="1">
+                    <Stop offset="0%" stopColor={xp.titleColor} />
+                    <Stop offset="100%" stopColor={xp.titleColor} stopOpacity={0.75} />
+                  </LinearGradient>
+                </Defs>
+                <Circle cx={12} cy={12} r={12} fill="url(#levelGrad)" />
+              </Svg>
               <Text style={[styles.levelNum, { color: colors.ctaFg }]}>{xp.level}</Text>
             </View>
             <View style={[styles.xpBarTrackWrap, { backgroundColor: 'transparent', marginLeft: -4 }]}>
@@ -260,6 +294,8 @@ export default function DashboardScreen() {
                     borderTopRightRadius: 4,
                     borderBottomRightRadius: 4,
                     overflow: 'hidden',
+                    borderTopWidth: 1,
+                    borderTopColor: 'rgba(0,0,0,0.08)',
                   },
                 ]}
               >
@@ -271,12 +307,32 @@ export default function DashboardScreen() {
                         inputRange: [0, 1],
                         outputRange: ['0%', '100%'],
                       }),
-                      backgroundColor: xp.titleColor,
                       borderTopRightRadius: 4,
                       borderBottomRightRadius: 4,
+                      overflow: 'hidden',
+                      shadowColor: xp.titleColor,
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: 0.35,
+                      shadowRadius: 6,
+                      elevation: 3,
                     },
                   ]}
-                />
+                >
+                  <Svg width="100%" height="100%" viewBox="0 0 100 8" preserveAspectRatio="none" style={StyleSheet.absoluteFill}>
+                    <Defs>
+                      <LinearGradient id="xpFillGrad" x1="0" y1="0" x2="1" y2="0">
+                        <Stop offset="0%" stopColor={xp.titleColor} stopOpacity={0.85} />
+                        <Stop offset="100%" stopColor={xp.titleColor} />
+                      </LinearGradient>
+                      <LinearGradient id="xpHighlight" x1="0" y1="0" x2="0" y2="1">
+                        <Stop offset="0%" stopColor="rgba(255,255,255,0.5)" />
+                        <Stop offset="100%" stopColor="transparent" />
+                      </LinearGradient>
+                    </Defs>
+                    <Rect x={0} y={0} width={100} height={8} fill="url(#xpFillGrad)" />
+                    <Rect x={0} y={0} width={100} height={3.2} fill="url(#xpHighlight)" />
+                  </Svg>
+                </Animated.View>
               </View>
             </View>
             <Text
@@ -419,6 +475,20 @@ export default function DashboardScreen() {
                       <Stop offset="60%" stopColor="#3b82f6" stopOpacity="0.12" />
                       <Stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
                     </LinearGradient>
+                    <ClipPath id="areaClip">
+                      <AnimatedRect
+                        x={0}
+                        y={chartAreaProgress.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [68, 12],
+                        })}
+                        width={CARD_WIDTH - 24}
+                        height={chartAreaProgress.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 56],
+                        })}
+                      />
+                    </ClipPath>
                   </Defs>
                   {(() => {
                     const w = CARD_WIDTH - 32;
@@ -440,7 +510,7 @@ export default function DashboardScreen() {
                       ? `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')}`
                       : '';
                     return (
-                      <>
+                      <G clipPath="url(#areaClip)">
                         <Path d={areaD} fill="url(#volGrad)" />
                         <AnimatedPath
                           d={lineD}
@@ -455,7 +525,7 @@ export default function DashboardScreen() {
                             outputRange: [lineLength, 0],
                           })}
                         />
-                      </>
+                      </G>
                     );
                   })()}
                 </Svg>
@@ -484,53 +554,82 @@ export default function DashboardScreen() {
                   },
                 ]}
               >
-                <Svg width={DONUT_SIZE} height={DONUT_SIZE} viewBox="0 0 100 100">
-                  {(() => {
-                    const total = muscleSplit.reduce((s, d) => s + d.value, 0);
-                    const paddingDeg = 2;
-                    const innerR = 30;
-                    const outerR = 50;
-                    const cx = 50;
-                    const cy = 50;
-                    return muscleSplit.slice(0, 6).map((seg, i) => {
-                      const pct = seg.value / total;
-                      const angle = (pct * 360 - paddingDeg) / 360 * 2 * Math.PI;
-                      const start = (() => {
-                        let acc = 0;
-                        for (let j = 0; j < i; j++) {
-                          const segPct = muscleSplit[j].value / total;
-                          acc += (segPct * 360 - paddingDeg) / 360 * 2 * Math.PI;
-                          acc += (paddingDeg / 360) * 2 * Math.PI;
-                        }
-                        return acc;
-                      })();
-                      const end = start + angle;
-                      const x1 = cx + outerR * Math.cos(start - Math.PI / 2);
-                      const y1 = cy + outerR * Math.sin(start - Math.PI / 2);
-                      const x2 = cx + outerR * Math.cos(end - Math.PI / 2);
-                      const y2 = cy + outerR * Math.sin(end - Math.PI / 2);
-                      const x3 = cx + innerR * Math.cos(end - Math.PI / 2);
-                      const y3 = cy + innerR * Math.sin(end - Math.PI / 2);
-                      const x4 = cx + innerR * Math.cos(start - Math.PI / 2);
-                      const y4 = cy + innerR * Math.sin(start - Math.PI / 2);
-                      const large = angle > Math.PI ? 1 : 0;
-                      const d = `M ${x1} ${y1} A ${outerR} ${outerR} 0 ${large} 1 ${x2} ${y2} L ${x3} ${y3} A ${innerR} ${innerR} 0 ${large} 0 ${x4} ${y4} Z`;
-                      return (
-                        <Path key={seg.name} d={d} fill={seg.color} />
-                      );
-                    });
-                  })()}
-                  <Circle cx={50} cy={50} r={28} fill={colors.card} />
-                </Svg>
+                <View
+                  style={styles.donutTouchArea}
+                  onStartShouldSetResponder={() => true}
+                  onResponderRelease={(e) => {
+                    const { locationX, locationY } = e.nativeEvent;
+                    const x = (locationX / DONUT_SIZE) * 100;
+                    const y = (locationY / DONUT_SIZE) * 100;
+                    const dist = Math.sqrt((x - 50) ** 2 + (y - 50) ** 2);
+                    if (dist < 28 || dist > 52) return;
+                    let angle = Math.atan2(x - 50, 50 - y);
+                    if (angle < 0) angle += 2 * Math.PI;
+                    const hit = donutSegmentBounds.find(({ start, end }) => angle >= start && angle < end);
+                    if (hit) setActiveSegment(hit.seg);
+                  }}
+                >
+                  <Svg width={DONUT_SIZE} height={DONUT_SIZE} viewBox="0 0 100 100" pointerEvents="none">
+                    {(() => {
+                      const total = muscleSplit.reduce((s, d) => s + d.value, 0);
+                      const displayed = activeSegment ?? muscleSplit[0];
+                      const paddingDeg = 2;
+                      const innerR = 30;
+                      const outerR = 50;
+                      const cx = 50;
+                      const cy = 50;
+                      return muscleSplit.slice(0, 6).map((seg, i) => {
+                        const pct = seg.value / total;
+                        const angle = (pct * 360 - paddingDeg) / 360 * 2 * Math.PI;
+                        const start = (() => {
+                          let acc = 0;
+                          for (let j = 0; j < i; j++) {
+                            const segPct = muscleSplit[j].value / total;
+                            acc += (segPct * 360 - paddingDeg) / 360 * 2 * Math.PI;
+                            acc += (paddingDeg / 360) * 2 * Math.PI;
+                          }
+                          return acc;
+                        })();
+                        const end = start + angle;
+                        const x1 = cx + outerR * Math.cos(start - Math.PI / 2);
+                        const y1 = cy + outerR * Math.sin(start - Math.PI / 2);
+                        const x2 = cx + outerR * Math.cos(end - Math.PI / 2);
+                        const y2 = cy + outerR * Math.sin(end - Math.PI / 2);
+                        const x3 = cx + innerR * Math.cos(end - Math.PI / 2);
+                        const y3 = cy + innerR * Math.sin(end - Math.PI / 2);
+                        const x4 = cx + innerR * Math.cos(start - Math.PI / 2);
+                        const y4 = cy + innerR * Math.sin(start - Math.PI / 2);
+                        const large = angle > Math.PI ? 1 : 0;
+                        const d = `M ${x1} ${y1} A ${outerR} ${outerR} 0 ${large} 1 ${x2} ${y2} L ${x3} ${y3} A ${innerR} ${innerR} 0 ${large} 0 ${x4} ${y4} Z`;
+                        const isActive = displayed?.name === seg.name;
+                        return (
+                          <Path
+                            key={seg.name}
+                            d={d}
+                            fill={seg.color}
+                            opacity={isActive ? 1 : 0.5}
+                          />
+                        );
+                      });
+                    })()}
+                    <Circle cx={50} cy={50} r={28} fill={colors.card} />
+                  </Svg>
+                </View>
                 <View style={styles.donutCenter} pointerEvents="none">
-                  <Text style={[styles.musclePct, { color: muscleSplit[0]?.color ?? colors.mutedForeground }]}>
-                    {muscleSplit[0] && totalSets > 0
-                      ? `${Math.round((muscleSplit[0].value / totalSets) * 100)}%`
-                      : muscleSplit[0] ? '100%' : '0%'}
-                  </Text>
-                  <Text style={[styles.muscleName, { color: colors.mutedForeground }]} numberOfLines={1}>
-                    {muscleSplit[0]?.name || '—'}
-                  </Text>
+                  {(() => {
+                    const seg = activeSegment ?? muscleSplit[0];
+                    const pct = seg && totalSets > 0 ? Math.round((seg.value / totalSets) * 100) : seg ? 100 : 0;
+                    return (
+                      <>
+                        <Text style={[styles.musclePct, { color: seg?.color ?? colors.mutedForeground }]}>
+                          {pct}%
+                        </Text>
+                        <Text style={[styles.muscleName, { color: colors.mutedForeground }]} numberOfLines={1}>
+                          {seg?.name || '—'}
+                        </Text>
+                      </>
+                    );
+                  })()}
                 </View>
               </Animated.View>
             ) : (
@@ -754,6 +853,7 @@ const styles = StyleSheet.create({
   miniChart: { marginTop: 6, height: 72 },
   chartNoData: { fontSize: 10 },
   donutWrap: { position: 'relative', alignItems: 'center', marginVertical: 4, width: DONUT_SIZE, height: DONUT_SIZE },
+  donutTouchArea: { width: DONUT_SIZE, height: DONUT_SIZE },
   donutCenter: {
     position: 'absolute',
     left: 0,
