@@ -16,10 +16,9 @@ import {
   Clock,
   ChevronRight,
 } from 'lucide-react-native';
-import Svg, { Path, Circle, Defs, LinearGradient, Stop, Rect, ClipPath, G } from 'react-native-svg';
+import Svg, { Path, Circle, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
@@ -85,6 +84,8 @@ const PAD = spacing.pageX;
 const GRID_WIDTH = SCREEN_WIDTH - PAD * 2;
 const CARD_WIDTH = (GRID_WIDTH - CARD_GAP) / 2;
 const DONUT_SIZE = 110;
+const VOLUME_CHART_WIDTH = CARD_WIDTH - 24;
+const VOLUME_CHART_HEIGHT = 72;
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
@@ -95,8 +96,6 @@ export default function DashboardScreen() {
   const { openWorkoutSelector } = useWorkoutSelector();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const chartLineProgress = useRef(new Animated.Value(0)).current;
-  const chartOpacity = useRef(new Animated.Value(0)).current;
-  const chartAreaProgress = useRef(new Animated.Value(0)).current;
   const donutScale = useRef(new Animated.Value(0.85)).current;
   const donutOpacity = useRef(new Animated.Value(0)).current;
   const xpBarProgress = useRef(new Animated.Value(0)).current;
@@ -105,15 +104,13 @@ export default function DashboardScreen() {
     value: number;
     color: string;
   } | null>(null);
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(chartOpacity, { toValue: 1, duration: 450, useNativeDriver: true }),
-      Animated.timing(chartLineProgress, { toValue: 1, duration: 700, useNativeDriver: true }),
-      Animated.timing(chartAreaProgress, { toValue: 1, duration: 650, useNativeDriver: true }),
-      Animated.timing(donutOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-      Animated.spring(donutScale, { toValue: 1, useNativeDriver: true, friction: 9, tension: 50 }),
-    ]).start();
-  }, []);
+  const [selectedVolumePoint, setSelectedVolumePoint] = useState<{
+    index: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const volumeAnimationStarted = useRef(false);
+  const donutAnimationStarted = useRef(false);
   useEffect(() => {
     Animated.timing(xpBarProgress, {
       toValue: Math.min(1, xp.progress),
@@ -239,6 +236,38 @@ export default function DashboardScreen() {
     user?.user_metadata?.full_name?.trim() || 'Guest';
   const recentSessions = sessions.slice(0, 5);
   const maxTrendVol = Math.max(1, ...weeklyTrend.map((d) => d.volume));
+  const hasVolumeData = weeklyTrend.some((d) => d.volume > 0);
+  const hasDonutData = muscleSplit.length > 0;
+
+  useEffect(() => {
+    if (!hasVolumeData) setSelectedVolumePoint(null);
+  }, [hasVolumeData]);
+
+  useEffect(() => {
+    if (!hasVolumeData) {
+      volumeAnimationStarted.current = false;
+      return;
+    }
+    if (volumeAnimationStarted.current) return;
+    volumeAnimationStarted.current = true;
+    chartLineProgress.setValue(0);
+    Animated.timing(chartLineProgress, { toValue: 1, duration: 750, useNativeDriver: true }).start();
+  }, [hasVolumeData]);
+
+  useEffect(() => {
+    if (!hasDonutData) {
+      donutAnimationStarted.current = false;
+      return;
+    }
+    if (donutAnimationStarted.current) return;
+    donutAnimationStarted.current = true;
+    donutOpacity.setValue(0);
+    donutScale.setValue(0.85);
+    Animated.parallel([
+      Animated.timing(donutOpacity, { toValue: 1, duration: 450, useNativeDriver: true }),
+      Animated.spring(donutScale, { toValue: 1, useNativeDriver: true, friction: 9, tension: 50 }),
+    ]).start();
+  }, [hasDonutData]);
 
   return (
     <ScrollView
@@ -264,7 +293,8 @@ export default function DashboardScreen() {
               style={[
                 styles.levelBadge,
                 {
-                  borderColor: 'transparent',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.35)',
                   shadowColor: xp.titleColor,
                   shadowOffset: { width: 0, height: 0 },
                   shadowOpacity: 0.35,
@@ -278,12 +308,12 @@ export default function DashboardScreen() {
                 <Defs>
                   <LinearGradient id="levelGrad" x1="0" y1="0" x2="1" y2="1">
                     <Stop offset="0%" stopColor={xp.titleColor} />
-                    <Stop offset="100%" stopColor={xp.titleColor} stopOpacity={0.75} />
+                    <Stop offset="100%" stopColor={xp.titleColor} stopOpacity={0.8} />
                   </LinearGradient>
                 </Defs>
                 <Circle cx={12} cy={12} r={12} fill="url(#levelGrad)" />
               </Svg>
-              <Text style={[styles.levelNum, { color: colors.ctaFg }]}>{xp.level}</Text>
+              <Text style={[styles.levelNum, { color: '#ffffff' }]}>{xp.level}</Text>
             </View>
             <View style={[styles.xpBarTrackWrap, { backgroundColor: 'transparent', marginLeft: -4 }]}>
               <View
@@ -291,11 +321,9 @@ export default function DashboardScreen() {
                   styles.xpBarTrack,
                   {
                     backgroundColor: colors.primarySubtle,
-                    borderTopRightRadius: 4,
-                    borderBottomRightRadius: 4,
+                    borderTopRightRadius: 1.5,
+                    borderBottomRightRadius: 1.5,
                     overflow: 'hidden',
-                    borderTopWidth: 1,
-                    borderTopColor: 'rgba(0,0,0,0.08)',
                   },
                 ]}
               >
@@ -307,30 +335,30 @@ export default function DashboardScreen() {
                         inputRange: [0, 1],
                         outputRange: ['0%', '100%'],
                       }),
-                      borderTopRightRadius: 4,
-                      borderBottomRightRadius: 4,
+                      borderTopRightRadius: 1.5,
+                      borderBottomRightRadius: 1.5,
                       overflow: 'hidden',
                       shadowColor: xp.titleColor,
                       shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: 0.35,
+                      shadowOpacity: 0.4,
                       shadowRadius: 6,
                       elevation: 3,
                     },
                   ]}
                 >
-                  <Svg width="100%" height="100%" viewBox="0 0 100 8" preserveAspectRatio="none" style={StyleSheet.absoluteFill}>
+                  <Svg width="100%" height="100%" viewBox="0 0 100 3" preserveAspectRatio="none" style={StyleSheet.absoluteFill}>
                     <Defs>
                       <LinearGradient id="xpFillGrad" x1="0" y1="0" x2="1" y2="0">
-                        <Stop offset="0%" stopColor={xp.titleColor} stopOpacity={0.85} />
+                        <Stop offset="0%" stopColor={xp.titleColor} stopOpacity={0.87} />
                         <Stop offset="100%" stopColor={xp.titleColor} />
                       </LinearGradient>
                       <LinearGradient id="xpHighlight" x1="0" y1="0" x2="0" y2="1">
-                        <Stop offset="0%" stopColor="rgba(255,255,255,0.5)" />
+                        <Stop offset="0%" stopColor="rgba(255,255,255,0.18)" />
                         <Stop offset="100%" stopColor="transparent" />
                       </LinearGradient>
                     </Defs>
-                    <Rect x={0} y={0} width={100} height={8} fill="url(#xpFillGrad)" />
-                    <Rect x={0} y={0} width={100} height={3.2} fill="url(#xpHighlight)" />
+                    <Rect x={0} y={0} width={100} height={3} fill="url(#xpFillGrad)" />
+                    <Rect x={0} y={0} width={100} height={1.2} fill="url(#xpHighlight)" />
                   </Svg>
                 </Animated.View>
               </View>
@@ -430,8 +458,7 @@ export default function DashboardScreen() {
 
       {/* ── Stats grid 2x3 (Figma: gap 12, label = icon color 10px, value 24px, card glow) ── */}
       <View style={[styles.statsGrid, { marginBottom: spacing[6] }]}>
-        <View style={[styles.statCard, styles.statCardGlow, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
-          <View style={[styles.statCardGlowInner, { backgroundColor: '#84cc16' }]} pointerEvents="none" />
+        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
           <View style={styles.statCardContent}>
             <View style={styles.statLabelRow}>
               <Dumbbell size={12} color="#84cc16" strokeWidth={2.5} />
@@ -441,8 +468,7 @@ export default function DashboardScreen() {
             <Text style={[styles.statSub, { color: colors.mutedForeground }]}>this week</Text>
           </View>
         </View>
-        <View style={[styles.statCard, styles.statCardGlow, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
-          <View style={[styles.statCardGlowInner, { backgroundColor: '#f97316' }]} pointerEvents="none" />
+        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
           <View style={styles.statCardContent}>
             <View style={styles.statLabelRow}>
               <Flame size={12} color="#f97316" strokeWidth={2.5} />
@@ -455,8 +481,7 @@ export default function DashboardScreen() {
             )}
           </View>
         </View>
-        <View style={[styles.statCard, styles.statCardGlow, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
-          <View style={[styles.statCardGlowInner, { backgroundColor: '#3b82f6' }]} pointerEvents="none" />
+        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
           <View style={styles.statCardContent}>
             <View style={styles.statLabelRow}>
               <TrendingUp size={12} color="#3b82f6" strokeWidth={2.5} />
@@ -467,69 +492,107 @@ export default function DashboardScreen() {
             </Text>
             <Text style={[styles.statSub, { color: colors.mutedForeground }]}>kg</Text>
             {weeklyTrend.some((d) => d.volume > 0) ? (
-              <Animated.View style={[styles.miniChart, { opacity: chartOpacity }]}>
-                <Svg width={CARD_WIDTH - 24} height={72} viewBox={`0 0 ${CARD_WIDTH - 24} 72`}>
-                  <Defs>
-                    <LinearGradient id="volGrad" x1="0" y1="0" x2="0" y2="1">
-                      <Stop offset="0%" stopColor="#3b82f6" stopOpacity="0.35" />
-                      <Stop offset="60%" stopColor="#3b82f6" stopOpacity="0.12" />
-                      <Stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
-                    </LinearGradient>
-                    <ClipPath id="areaClip">
-                      <AnimatedRect
-                        x={0}
-                        y={chartAreaProgress.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [68, 12],
-                        })}
-                        width={CARD_WIDTH - 24}
-                        height={chartAreaProgress.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, 56],
-                        })}
-                      />
-                    </ClipPath>
-                  </Defs>
-                  {(() => {
+              <View style={styles.miniChart}>
+                <View
+                  style={styles.volumeChartTouchArea}
+                  onStartShouldSetResponder={() => true}
+                  onResponderGrant={(e) => {
+                    const { locationX } = e.nativeEvent;
+                    const n = weeklyTrend.length;
+                    if (n === 0) return;
+                    const fraction = Math.max(0, Math.min(1, locationX / VOLUME_CHART_WIDTH));
+                    const index = n === 1 ? 0 : Math.round(fraction * (n - 1));
                     const w = CARD_WIDTH - 32;
                     const h = 56;
                     const baseY = 68;
-                    const pts = weeklyTrend.map((d, i) => {
-                      const x = 4 + (i / (weeklyTrend.length - 1 || 1)) * w;
-                      const y = baseY - (d.volume / maxTrendVol) * h;
-                      return { x, y };
-                    });
-                    let lineLength = 0;
-                    for (let i = 1; i < pts.length; i++) {
-                      lineLength += Math.sqrt((pts[i].x - pts[i - 1].x) ** 2 + (pts[i].y - pts[i - 1].y) ** 2);
-                    }
-                    const areaD = pts.length
-                      ? `M ${pts[0].x} ${baseY} L ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')} L ${pts[pts.length - 1].x} ${baseY} Z`
-                      : '';
-                    const lineD = pts.length
-                      ? `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')}`
-                      : '';
-                    return (
-                      <G clipPath="url(#areaClip)">
-                        <Path d={areaD} fill="url(#volGrad)" />
-                        <AnimatedPath
-                          d={lineD}
-                          fill="none"
-                          stroke="#3b82f6"
-                          strokeWidth={2}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeDasharray={lineLength}
-                          strokeDashoffset={chartLineProgress.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [lineLength, 0],
-                          })}
-                        />
-                      </G>
-                    );
-                  })()}
-                </Svg>
-              </Animated.View>
+                    const vol = weeklyTrend[index]?.volume ?? 0;
+                    const x = 4 + (index / (n - 1 || 1)) * w;
+                    const y = baseY - (vol / maxTrendVol) * h;
+                    setSelectedVolumePoint({ index, x, y });
+                  }}
+                  onResponderRelease={() => setSelectedVolumePoint(null)}
+                  onResponderTerminate={() => setSelectedVolumePoint(null)}
+                >
+                  <Svg width={VOLUME_CHART_WIDTH} height={VOLUME_CHART_HEIGHT} viewBox={`0 0 ${VOLUME_CHART_WIDTH} ${VOLUME_CHART_HEIGHT}`} pointerEvents="none">
+                    <Defs>
+                      <LinearGradient id="volGrad" x1="0" y1="0" x2="0" y2="1">
+                        <Stop offset="0%" stopColor="#3b82f6" stopOpacity="0.35" />
+                        <Stop offset="60%" stopColor="#3b82f6" stopOpacity="0.12" />
+                        <Stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
+                      </LinearGradient>
+                    </Defs>
+                    {(() => {
+                      const w = CARD_WIDTH - 32;
+                      const h = 56;
+                      const baseY = 68;
+                      const pts = weeklyTrend.map((d, i) => {
+                        const x = 4 + (i / (weeklyTrend.length - 1 || 1)) * w;
+                        const y = baseY - (d.volume / maxTrendVol) * h;
+                        return { x, y };
+                      });
+                      let lineLength = 0;
+                      for (let i = 1; i < pts.length; i++) {
+                        lineLength += Math.sqrt((pts[i].x - pts[i - 1].x) ** 2 + (pts[i].y - pts[i - 1].y) ** 2);
+                      }
+                      const areaD = pts.length
+                        ? `M ${pts[0].x} ${baseY} L ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')} L ${pts[pts.length - 1].x} ${baseY} Z`
+                        : '';
+                      const lineD = pts.length
+                        ? `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')}`
+                        : '';
+                      const sel = selectedVolumePoint != null && pts[selectedVolumePoint.index] ? pts[selectedVolumePoint.index] : null;
+                      return (
+                        <>
+                          <Path d={areaD} fill="url(#volGrad)" />
+                          <AnimatedPath
+                            d={lineD}
+                            fill="none"
+                            stroke="#3b82f6"
+                            strokeWidth={2}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeDasharray={lineLength}
+                            strokeDashoffset={chartLineProgress.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [lineLength, 0],
+                            })}
+                          />
+                          {sel != null && (
+                            <Circle cx={sel.x} cy={sel.y} r={5} fill="#3b82f6" stroke="#fff" strokeWidth={2} />
+                          )}
+                        </>
+                      );
+                    })()}
+                  </Svg>
+                </View>
+                {selectedVolumePoint !== null && weeklyTrend[selectedVolumePoint.index] != null && (() => {
+                  const pt = selectedVolumePoint;
+                  const showAbove = pt.y > VOLUME_CHART_HEIGHT / 2;
+                  const tooltipTop = showAbove ? pt.y - 28 : pt.y + 8;
+                  return (
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.volumeTooltipOverlay,
+                        {
+                          backgroundColor: colors.card,
+                          borderColor: colors.borderSubtle,
+                          left: pt.x,
+                          top: tooltipTop,
+                          transform: [{ translateX: -70 }],
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.volumeTooltipLabel, { color: colors.textDim }]}>
+                        {weeklyTrend[pt.index].week}:
+                      </Text>
+                      <Text style={[styles.volumeTooltipValue, { color: colors.foreground }]}>
+                        {weeklyTrend[pt.index].volume} kg
+                      </Text>
+                    </View>
+                  );
+                })()}
+              </View>
             ) : (
               <View style={[styles.miniChart, { justifyContent: 'center' }]}>
                 <Text style={[styles.chartNoData, { color: colors.textDim }]}>No data</Text>
@@ -537,8 +600,7 @@ export default function DashboardScreen() {
             )}
           </View>
         </View>
-        <View style={[styles.statCard, styles.statCardGlow, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
-          <View style={[styles.statCardGlowInner, { backgroundColor: '#ec4899' }]} pointerEvents="none" />
+        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
           <View style={styles.statCardContent}>
             <View style={styles.statLabelRow}>
               <Activity size={12} color="#ec4899" strokeWidth={2.5} />
@@ -640,8 +702,7 @@ export default function DashboardScreen() {
             )}
           </View>
         </View>
-        <View style={[styles.statCard, styles.statCardGlow, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
-          <View style={[styles.statCardGlowInner, { backgroundColor: '#a855f7' }]} pointerEvents="none" />
+        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
           <View style={styles.statCardContent}>
             <View style={styles.statLabelRow}>
               <Clock size={12} color="#a855f7" strokeWidth={2.5} />
@@ -654,8 +715,7 @@ export default function DashboardScreen() {
             <Text style={[styles.statHint, { color: colors.textDim }]}>per workout</Text>
           </View>
         </View>
-        <View style={[styles.statCard, styles.statCardGlow, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
-          <View style={[styles.statCardGlowInner, { backgroundColor: '#10b981' }]} pointerEvents="none" />
+        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.borderSubtle }]}>
           <View style={styles.statCardContent}>
             <View style={styles.statLabelRow}>
               <Dumbbell size={12} color="#10b981" strokeWidth={2.5} />
@@ -707,7 +767,7 @@ export default function DashboardScreen() {
                     key={s.id}
                     style={[styles.recentCard, { backgroundColor: colors.glow3, borderColor: colors.borderSubtle }]}
                   >
-                    <View style={[styles.recentIconBox, { backgroundColor: colors.primaryMuted }]}>
+                    <View style={[styles.recentIconBox, { backgroundColor: colors.secondary }]}>
                       <View style={[styles.recentDot, { backgroundColor: dotColor }]} />
                     </View>
                     <View style={styles.recentCardBody}>
@@ -719,24 +779,24 @@ export default function DashboardScreen() {
                       </Text>
                       <View style={styles.tagRow}>
                         {tags.map((name) => (
-                          <View key={name} style={[styles.tag, { backgroundColor: colors.muted }]}>
-                            <Text style={[styles.tagText, { color: colors.textSecondary }]} numberOfLines={1}>
+                          <View key={name} style={[styles.tag, { backgroundColor: colors.surfaceHover }]}>
+                            <Text style={[styles.tagText, { color: colors.mutedForeground }]} numberOfLines={1}>
                               {name}
                             </Text>
                           </View>
                         ))}
                         {more > 0 && (
-                          <View style={[styles.tag, { backgroundColor: colors.muted }]}>
-                            <Text style={[styles.tagText, { color: colors.textDim }]}>+{more} more</Text>
+                          <View style={[styles.tag, { backgroundColor: colors.surfaceHover }]}>
+                            <Text style={[styles.tagText, { color: colors.mutedForeground }]}>+{more} more</Text>
                           </View>
                         )}
                       </View>
                     </View>
                     <View style={styles.recentCardRight}>
-                      <Text style={[styles.recentDuration, { color: colors.mutedForeground }]}>
+                      <Text style={[styles.recentDuration, { color: colors.foreground }]}>
                         {fmtDuration(s.duration_seconds ?? 0)}
                       </Text>
-                      <Text style={[styles.recentVolume, { color: colors.mutedForeground }]}>
+                      <Text style={[styles.recentVolume, { color: colors.foreground }]}>
                         {s.total_volume ?? 0}kg
                       </Text>
                     </View>
@@ -758,13 +818,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  headerLeft: { flex: 1, minWidth: 0 },
+  headerLeft: { flex: 1, minWidth: 0, maxWidth: 200 },
   greeting: { fontSize: 10, fontWeight: '500', letterSpacing: 1 },
   userName: { fontSize: 18, fontWeight: '800', marginTop: -2, marginLeft: 2, maxWidth: 200 },
   xpRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing[3],
+    marginTop: spacing[2],
     gap: 0,
   },
   levelBadge: {
@@ -776,10 +836,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   levelNum: { fontSize: 10, fontWeight: '800' },
-  xpBarTrackWrap: { flex: 1, minWidth: 0 },
+  xpBarTrackWrap: { flex: 1, minWidth: 0, height: 3, alignSelf: 'center' },
   xpBarTrack: {
     flex: 1,
-    height: 8,
+    height: 3,
     borderRadius: 0,
     overflow: 'hidden',
   },
@@ -834,15 +894,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
-  statCardGlow: {},
-  statCardGlowInner: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    opacity: 0.04,
-  },
   statCardContent: { position: 'relative' },
   statLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
   statTitle: { fontSize: 10, fontWeight: '600', letterSpacing: 1 },
@@ -850,7 +901,22 @@ const styles = StyleSheet.create({
   statValueVolume: { fontSize: 20, fontWeight: '800', marginTop: 0 },
   statSub: { fontSize: 10, marginTop: 2 },
   statHint: { fontSize: 10, marginTop: 2 },
-  miniChart: { marginTop: 6, height: 72 },
+  miniChart: { marginTop: 6, height: 72, position: 'relative' },
+  volumeTooltipOverlay: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    minWidth: 100,
+  },
+  volumeTooltipLabel: { fontSize: 10, fontWeight: '600' },
+  volumeTooltipValue: { fontSize: 12, fontWeight: '800' },
+  volumeChartTouchArea: { width: VOLUME_CHART_WIDTH, height: VOLUME_CHART_HEIGHT },
   chartNoData: { fontSize: 10 },
   donutWrap: { position: 'relative', alignItems: 'center', marginVertical: 4, width: DONUT_SIZE, height: DONUT_SIZE },
   donutTouchArea: { width: DONUT_SIZE, height: DONUT_SIZE },
