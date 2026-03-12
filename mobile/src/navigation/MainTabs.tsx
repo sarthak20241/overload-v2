@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet, Platform, ActivityIndicator, Alert } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Play } from 'lucide-react-native';
+import { Play, Home, Dumbbell, History, BarChart2 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
 import { useWorkout, type ActiveExercise } from '../context/WorkoutContext';
@@ -194,8 +194,22 @@ function MainTabsWithModal({
           tabBarShowLabel: true,
         }}
       >
-        <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Dashboard' }} />
-        <Tab.Screen name="Routines" component={RoutinesScreen} options={{ title: 'Routines' }} />
+        <Tab.Screen
+          name="Dashboard"
+          component={DashboardScreen}
+          options={{
+            title: 'Dashboard',
+            tabBarIcon: ({ color, size }) => <Home size={size ?? 22} color={color} strokeWidth={2} />,
+          }}
+        />
+        <Tab.Screen
+          name="Routines"
+          component={RoutinesScreen}
+          options={{
+            title: 'Routines',
+            tabBarIcon: ({ color, size }) => <Dumbbell size={size ?? 22} color={color} strokeWidth={2} />,
+          }}
+        />
         <Tab.Screen
           name="Play"
           component={View}
@@ -208,8 +222,22 @@ function MainTabsWithModal({
             ),
           }}
         />
-        <Tab.Screen name="History" component={HistoryScreen} options={{ title: 'History' }} />
-        <Tab.Screen name="Analytics" component={AnalyticsScreen} options={{ title: 'Analytics' }} />
+        <Tab.Screen
+          name="History"
+          component={HistoryScreen}
+          options={{
+            title: 'History',
+            tabBarIcon: ({ color, size }) => <History size={size ?? 22} color={color} strokeWidth={2} />,
+          }}
+        />
+        <Tab.Screen
+          name="Analytics"
+          component={AnalyticsScreen}
+          options={{
+            title: 'Analytics',
+            tabBarIcon: ({ color, size }) => <BarChart2 size={size ?? 22} color={color} strokeWidth={2} />,
+          }}
+        />
       </Tab.Navigator>
       <FloatingWorkoutBar />
       <WorkoutSelectorModal
